@@ -1,4 +1,6 @@
-package main
+package permutations
+
+// package main
 
 import (
 	"errors"
@@ -46,7 +48,7 @@ func BitPermutations(bytes []byte, pBlock []int, indexMode IndexMode, initialBit
 			bit--
 		}
 
-		if bit < 0 || bit > totalBitsPBlock {
+		if bit < 0 || bit >= totalBits {
 			return nil, fmt.Errorf("pBlock[%d] out of range", index)
 		}
 
