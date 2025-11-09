@@ -25,17 +25,22 @@ func (da *DEALAdapter) Apply(rightHalf []byte, roundKey []byte) ([]byte, error) 
 		return nil, fmt.Errorf("DEAL adapter: right half must be 8 bytes (got %d)", len(rightHalf))
 	}
 
+	desInstance, err := des.NewDES()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create DES: %w", err)
+	}
+
 	if len(roundKey) >= 8 {
 		desKey := make([]byte, 8)
 		copy(desKey, roundKey[:8])
 
-		err := da.desInstance.SetKey(desKey)
+		err := desInstance.SetKey(desKey)
 		if err != nil {
 			return nil, fmt.Errorf("failed to set DES key: %w", err)
 		}
 	}
 
-	result, err := da.desInstance.Encrypt(rightHalf)
+	result, err := desInstance.Encrypt(rightHalf)
 	if err != nil {
 		return nil, fmt.Errorf("DES encryption failed: %w", err)
 	}
