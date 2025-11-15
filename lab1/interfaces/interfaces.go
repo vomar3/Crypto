@@ -653,31 +653,81 @@ func (cc *CipherContext) encryptCFB(ctx context.Context, data []byte) ([]byte, e
 }
 
 func (cc *CipherContext) decryptCFB(ctx context.Context, data []byte) ([]byte, error) {
+	numFullBlocks := len(data) / cc.blockSize
 	plaintext := make([]byte, len(data))
-	iv := make([]byte, cc.blockSize)
-	copy(iv, cc.iv)
 
-	for i := 0; i < len(data); i += cc.blockSize {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		default:
+	var wg sync.WaitGroup
+	errCh := make(chan error, numFullBlocks)
+
+	maxWorkers := min(numFullBlocks, 8)
+	blocksCh := make(chan int, numFullBlocks)
+
+	for i := 0; i < numFullBlocks; i++ {
+		blocksCh <- i
+	}
+	close(blocksCh)
+
+	for w := 0; w < maxWorkers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for blockIdx := range blocksCh {
+				select {
+				case <-ctx.Done():
+					errCh <- ctx.Err()
+					return
+				default:
+				}
+
+				var prevBlock []byte
+				if blockIdx == 0 {
+					prevBlock = cc.iv
+				} else {
+					prevStart := (blockIdx - 1) * cc.blockSize
+					prevBlock = data[prevStart : prevStart+cc.blockSize]
+				}
+
+				keystream, err := cc.cipher.Encrypt(prevBlock)
+				if err != nil {
+					errCh <- err
+					return
+				}
+
+				start := blockIdx * cc.blockSize
+				for j := start; j < start+cc.blockSize; j++ {
+					plaintext[j] = data[j] ^ keystream[j-start]
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	remainder := len(data) % cc.blockSize
+	if remainder > 0 {
+		var prevBlock []byte
+		if numFullBlocks == 0 {
+			prevBlock = cc.iv
+		} else {
+			prevStart := (numFullBlocks - 1) * cc.blockSize
+			prevBlock = data[prevStart : prevStart+cc.blockSize]
 		}
 
-		encrypted, err := cc.cipher.Encrypt(iv)
+		keystream, err := cc.cipher.Encrypt(prevBlock)
 		if err != nil {
 			return nil, err
 		}
 
-		blockSize := min(cc.blockSize, len(data)-i)
-
-		for j := 0; j < blockSize; j++ {
-			plaintext[i+j] = data[i+j] ^ encrypted[j]
-		}
-
-		copy(iv, data[i:i+blockSize])
-		if blockSize < cc.blockSize {
-			copy(iv[blockSize:], encrypted[blockSize:])
+		start := numFullBlocks * cc.blockSize
+		for j := 0; j < remainder; j++ {
+			plaintext[start+j] = data[start+j] ^ keystream[j]
 		}
 	}
 
