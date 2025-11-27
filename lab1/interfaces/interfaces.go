@@ -1,7 +1,5 @@
 package interfaces
 
-// package main
-
 import (
 	"context"
 	"crypto/rand"
@@ -735,11 +733,14 @@ func (cc *CipherContext) decryptCFB(ctx context.Context, data []byte) ([]byte, e
 }
 
 func (cc *CipherContext) encryptOFB(ctx context.Context, data []byte) ([]byte, error) {
+	numBlocks := (len(data) + cc.blockSize - 1) / cc.blockSize
 	ciphertext := make([]byte, len(data))
+
+	keystream := make([][]byte, numBlocks)
 	iv := make([]byte, cc.blockSize)
 	copy(iv, cc.iv)
 
-	for i := 0; i < len(data); i += cc.blockSize {
+	for i := 0; i < numBlocks; i++ {
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
@@ -751,13 +752,52 @@ func (cc *CipherContext) encryptOFB(ctx context.Context, data []byte) ([]byte, e
 			return nil, err
 		}
 
-		blockSize := min(cc.blockSize, len(data)-i)
-
-		for j := 0; j < blockSize; j++ {
-			ciphertext[i+j] = data[i+j] ^ encrypted[j]
-		}
-
+		keystream[i] = make([]byte, cc.blockSize)
+		copy(keystream[i], encrypted)
 		copy(iv, encrypted)
+	}
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, numBlocks)
+
+	maxWorkers := min(numBlocks, 8)
+	blocksCh := make(chan int, numBlocks)
+
+	for i := 0; i < numBlocks; i++ {
+		blocksCh <- i
+	}
+	close(blocksCh)
+
+	for w := 0; w < maxWorkers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for blockIdx := range blocksCh {
+				select {
+				case <-ctx.Done():
+					errCh <- ctx.Err()
+					return
+				default:
+				}
+
+				start := blockIdx * cc.blockSize
+				end := min(start+cc.blockSize, len(data))
+				blockSize := end - start
+
+				for j := 0; j < blockSize; j++ {
+					ciphertext[start+j] = data[start+j] ^ keystream[blockIdx][j]
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return ciphertext, nil
@@ -1096,31 +1136,3 @@ func (srt *SimpleRoundTransformer) Transform(block, roundKey []byte) ([]byte, er
 	}
 	return result, nil
 }
-
-/*func main() {
-	exp := &SimpleKeyExpander{}
-	tr := &SimpleRoundTransformer{}
-	cipher := NewSimpleCipher(16, exp, tr)
-
-	cfg := CipherContextConfig{
-		Key:     []byte("demo_key_123456"),
-		Mode:    CTR,
-		Padding: PKCS7,
-	}
-	ctx, _ := context.WithCancel(context.Background())
-	cc, _ := NewCipherContext(cipher, cfg)
-
-	plain := []byte("demo data")
-	enc, _ := cc.EncryptBytes(ctx, plain)
-	dec, _ := cc.DecryptBytes(ctx, enc)
-
-	fmt.Printf("plain → %q\nenc   → %x\ndec   → %q\n",
-		plain, enc, dec)
-
-	_ = os.WriteFile("in.txt", []byte("file demo content"), 0644)
-	_ = cc.EncryptFile(ctx, "in.txt", "encrypted.txt")
-	_ = cc.DecryptFile(ctx, "encrypted.txt", "out.txt")
-
-	decryptedFile, _ := os.ReadFile("out.txt")
-	fmt.Printf("file decrypted: %q\n", decryptedFile)
-}*/

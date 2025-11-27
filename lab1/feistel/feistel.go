@@ -190,37 +190,3 @@ func (sfks *SimpleFeistelKeySchedule) ExpandKey(key []byte) ([][]byte, error) {
 func (sfks *SimpleFeistelKeySchedule) NumRounds() int {
 	return sfks.numRounds
 }
-
-/*func main() {
-	fFunc := NewSimpleFeistelFunction(4)
-	keySchedule := NewSimpleFeistelKeySchedule(8)
-
-	network, err := NewFeistelNetwork(fFunc, keySchedule)
-	if err != nil {
-		panic(err)
-	}
-
-	key := []byte("mykey12345")
-	err = network.SetKey(key)
-	if err != nil {
-		panic(err)
-	}
-
-	var cipher interfaces.BlockCipher
-	cipher = network
-
-	plaintext := []byte("12345678")
-	fmt.Printf("Plaintext:  %q\n", plaintext)
-
-	encrypted, err := cipher.Encrypt(plaintext)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Printf("Encrypted:  % x\n", encrypted)
-
-	decrypted, err := cipher.Decrypt(encrypted)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Printf("Decrypted:  %q\n", decrypted)
-}*/

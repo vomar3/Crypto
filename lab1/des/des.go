@@ -47,10 +47,14 @@ var ExpansionTable = []int{
 }
 
 var PermutationTable = []int{
-	16, 7, 20, 21, 29, 12, 28, 17,
-	1, 15, 23, 26, 5, 18, 31, 10,
-	2, 8, 24, 14, 32, 27, 3, 9,
-	19, 13, 30, 6, 22, 11, 4, 25,
+	16, 7, 20, 21,
+	29, 12, 28, 17,
+	1, 15, 23, 26,
+	5, 18, 31, 10,
+	2, 8, 24, 14,
+	32, 27, 3, 9,
+	19, 13, 30, 6,
+	22, 11, 4, 25,
 }
 
 var SBoxes = [8][4][16]byte{
@@ -105,38 +109,37 @@ var SBoxes = [8][4][16]byte{
 }
 
 var PC1Table = []int{
-	57, 49, 41, 33, 25, 17, 9, 1,
-	58, 50, 42, 34, 26, 18, 10, 2,
-	59, 51, 43, 35, 27, 19, 11, 3,
-	60, 52, 44, 36, 28, 20, 12, 4,
-	61, 53, 45, 37, 29, 21, 13, 5,
-	62, 54, 46, 38, 30, 22, 14, 6,
-	63, 55, 47, 39, 31, 23, 15, 7,
-	64, 56, 48, 40, 32, 24, 16, 8,
+	57, 49, 41, 33, 25, 17, 9,
+	1, 58, 50, 42, 34, 26, 18,
+	10, 2, 59, 51, 43, 35, 27,
+	19, 11, 3, 60, 52, 44, 36,
+	63, 55, 47, 39, 31, 23, 15,
+	7, 62, 54, 46, 38, 30, 22,
+	14, 6, 61, 53, 45, 37, 29,
+	21, 13, 5, 28, 20, 12, 4,
 }
 
 var PC2Table = []int{
-	14, 17, 11, 24, 1, 5, 3, 28,
-	15, 6, 21, 10, 23, 19, 12, 4,
-	26, 8, 16, 7, 27, 20, 13, 2,
-	41, 52, 31, 37, 47, 32, 30, 40,
-	35, 45, 33, 48, 38, 49, 39, 43,
-	34, 46, 42, 36, 50, 29, 25, 18,
+	14, 17, 11, 24, 1, 5,
+	3, 28, 15, 6, 21, 10,
+	23, 19, 12, 4, 26, 8,
+	16, 7, 27, 20, 13, 2,
+	41, 52, 31, 37, 47, 55,
+	30, 40, 51, 45, 33, 48,
+	44, 49, 39, 56, 34, 53,
+	46, 42, 50, 36, 29, 32,
 }
 
 var RotationSchedule = []int{1, 1, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 1}
 
 func extract6Bits(data []byte, startBit int) byte {
-	result := byte(0)
+	var result byte = 0
 	for i := 0; i < 6; i++ {
-		bitIdx := startBit + i
-		byteIdx := bitIdx / 8
-		bitPos := bitIdx % 8
-
-		if byteIdx < len(data) {
-			bit := (data[byteIdx] >> (7 - bitPos)) & 1
-			result = (result << 1) | bit
-		}
+		bitIndex := startBit + i
+		byteIndex := bitIndex / 8
+		bitPos := 7 - (bitIndex % 8)
+		bit := (data[byteIndex] >> bitPos) & 1
+		result = (result << 1) | bit
 	}
 	return result
 }
@@ -147,30 +150,80 @@ func set4Bits(data []byte, position int, value byte) {
 		byteIdx := bitIdx / 8
 		bitPos := 7 - (bitIdx % 8)
 
-		if byteIdx < len(data) {
-			if (value>>(3-i))&1 != 0 {
-				data[byteIdx] |= (1 << bitPos)
-			} else {
-				data[byteIdx] &^= (1 << bitPos)
-			}
+		if (value & (1 << (3 - i))) != 0 {
+			data[byteIdx] |= (1 << bitPos)
+		} else {
+			data[byteIdx] &^= (1 << bitPos)
 		}
 	}
 }
 
-func rotateLeftBytes(data []byte) {
-	if len(data) == 0 {
-		return
-	}
+func extractBits(data []byte, start, n int) []byte {
+	result := make([]byte, (n+7)/8)
+	for i := 0; i < n; i++ {
+		srcBit := start + i
+		srcByte := srcBit / 8
+		srcPos := 7 - (srcBit % 8)
 
-	carry := (data[0] & 0x80) >> 7
+		dstByte := i / 8
+		dstPos := 7 - (i % 8)
 
-	for i := 0; i < len(data); i++ {
-		if i == len(data)-1 {
-			data[i] = (data[i] << 1) | carry
-		} else {
-			data[i] = (data[i] << 1) | ((data[i+1] & 0x80) >> 7)
+		if srcByte < len(data) {
+			if (data[srcByte]>>srcPos)&1 != 0 {
+				result[dstByte] |= 1 << dstPos
+			}
 		}
 	}
+	return result
+}
+
+func rotateLeft28(data []byte, shift int) []byte {
+	result := make([]byte, len(data))
+	for i := 0; i < 28; i++ {
+		srcBit := (i + shift) % 28
+		srcByte := srcBit / 8
+		srcPos := 7 - (srcBit % 8)
+
+		dstByte := i / 8
+		dstPos := 7 - (i % 8)
+
+		if (data[srcByte]>>srcPos)&1 != 0 {
+			result[dstByte] |= 1 << dstPos
+		}
+	}
+	return result
+}
+
+func combineBits(a, b []byte, bitsPerPart int) []byte {
+	totalBits := bitsPerPart * 2
+	result := make([]byte, (totalBits+7)/8)
+
+	for i := 0; i < bitsPerPart; i++ {
+		srcByte := i / 8
+		srcPos := 7 - (i % 8)
+
+		dstByte := i / 8
+		dstPos := 7 - (i % 8)
+
+		if (a[srcByte]>>srcPos)&1 != 0 {
+			result[dstByte] |= 1 << dstPos
+		}
+	}
+
+	for i := 0; i < bitsPerPart; i++ {
+		srcByte := i / 8
+		srcPos := 7 - (i % 8)
+
+		dstBit := bitsPerPart + i
+		dstByte := dstBit / 8
+		dstPos := 7 - (dstBit % 8)
+
+		if (b[srcByte]>>srcPos)&1 != 0 {
+			result[dstByte] |= 1 << dstPos
+		}
+	}
+
+	return result
 }
 
 type DESFFunction struct{}
@@ -234,23 +287,23 @@ func (dks *DESKeySchedule) ExpandKey(key []byte) ([][]byte, error) {
 		return nil, fmt.Errorf("PC1 failed: %w", err)
 	}
 
+	C := extractBits(permutedKey, 0, 28)
+	D := extractBits(permutedKey, 28, 28)
+
 	roundKeys := make([][]byte, DESRounds)
 
 	for i := 0; i < DESRounds; i++ {
-		shifted := make([]byte, len(permutedKey))
-		copy(shifted, permutedKey)
+		C = rotateLeft28(C, RotationSchedule[i])
+		D = rotateLeft28(D, RotationSchedule[i])
 
-		for j := 0; j < RotationSchedule[i]; j++ {
-			rotateLeftBytes(shifted)
-		}
+		combined := combineBits(C, D, 28)
 
-		roundKey, err := permutations.BitPermutations(shifted, PC2Table, permutations.HighToLow, permutations.FirstBit)
+		roundKey, err := permutations.BitPermutations(combined, PC2Table, permutations.HighToLow, permutations.FirstBit)
 		if err != nil {
 			return nil, fmt.Errorf("PC2 failed at round %d: %w", i, err)
 		}
 
 		roundKeys[i] = roundKey
-		copy(permutedKey, shifted)
 	}
 
 	return roundKeys, nil
@@ -295,7 +348,14 @@ func (d *DES) Encrypt(block []byte) ([]byte, error) {
 		return nil, fmt.Errorf("feistel encrypt failed: %w", err)
 	}
 
-	final, err := permutations.BitPermutations(result, FPTable, permutations.HighToLow, permutations.FirstBit)
+	if len(result) != DESBlockSize {
+		return nil, errors.New("unexpected block size after encryption rounds")
+	}
+	swapped := make([]byte, DESBlockSize)
+	copy(swapped[:4], result[4:])
+	copy(swapped[4:], result[:4])
+
+	final, err := permutations.BitPermutations(swapped, FPTable, permutations.HighToLow, permutations.FirstBit)
 	if err != nil {
 		return nil, fmt.Errorf("FP failed: %w", err)
 	}
@@ -313,7 +373,13 @@ func (d *DES) Decrypt(block []byte) ([]byte, error) {
 		return nil, fmt.Errorf("IP failed: %w", err)
 	}
 
-	result, err := d.network.Decrypt(permuted)
+	if len(permuted) != DESBlockSize {
+		return nil, errors.New("unexpected block size after initial permutation")
+	}
+	swapped := make([]byte, DESBlockSize)
+	copy(swapped[:4], permuted[4:])
+	copy(swapped[4:], permuted[:4])
+	result, err := d.network.Decrypt(swapped)
 	if err != nil {
 		return nil, fmt.Errorf("feistel decrypt failed: %w", err)
 	}
