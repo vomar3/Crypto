@@ -104,7 +104,7 @@ func main() {
 		return
 	}
 
-	modes := []string{"ECB", "CBC", "CTR", "CFB", "OFB"}
+	modes := []string{"ECB", "CBC", "PCBC", "CTR", "CFB", "OFB", "RandomDelta"}
 
 	for _, file := range files {
 		filePath := filepath.Join(testFolder, file.Name())
